@@ -2,24 +2,27 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
-    branches: [main]
+    branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+      - name: Checkout do código
+        uses: actions/checkout@v3
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: '18'
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.6.6  # ou a versão que você preferir
 
-    - name: Install dependencies
-      run: npm install
+      - name: Inicializar Terraform
+        run: terraform init
+        working-directory: infra/
 
-    - name: Run tests
-      run: npm test
+      - name: Validar código Terraform
+        run: terraform validate
+        working-directory: infra/
