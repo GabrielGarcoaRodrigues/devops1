@@ -1,4 +1,3 @@
-# .github/workflows/ci-cd.yml
 
 name: CI/CD Pipeline - Terraform
 
@@ -23,14 +22,12 @@ jobs:
         with:
           terraform_version: 1.6.6
 
-      # Configura as credenciais da AWS para o 'terraform plan'
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1 # Ou a região que você está usando
-
+          aws-region: us-east-1 
       - name: Inicializar Terraform
         run: terraform init
         working-directory: infra/
@@ -47,11 +44,10 @@ jobs:
         run: terraform plan -no-color
         working-directory: infra/
 
-  # Job de CD: Roda apenas após um merge na branch 'main'
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    needs: build_and_plan # Depende do sucesso do job anterior
+    needs: build_and_plan 
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' # Condição para rodar
 
     steps:
