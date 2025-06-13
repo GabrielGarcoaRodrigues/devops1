@@ -1,16 +1,19 @@
-# Usando imagem base
-FROM node:18
+FROM node:18-alpine as build
 
-# Criando diretório de trabalho
 WORKDIR /app
 
-# Copiando arquivos
 COPY package*.json ./
 RUN npm install
-COPY . .
 
-# Porta exposta
+COPY . .
+RUN npm run build
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY --from=build /app ./
+
 EXPOSE 3000
 
-# Comando para iniciar
 CMD ["npm", "start"]
