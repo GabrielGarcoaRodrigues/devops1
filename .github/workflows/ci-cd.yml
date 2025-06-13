@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: DevOps Demo CI/CD
 
 on:
   push:
@@ -8,62 +8,80 @@ on:
 
 env:
   NODE_VERSION: '18'
-  DOCKER_IMAGE: minha-app
+  DOCKER_IMAGE: devops-demo-app
 
 jobs:
+  # Job de Continuous Integration
   ci:
+    name:  Continuous Integration
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout código
+      - name:  Checkout código
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name:  Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Instalar dependências
+      - name:  Instalar dependências
         run: npm ci
 
-      - name: Executar linting
-        run: npm run lint || echo "Lint não configurado"
+      - name:  Executar ESLint
+        run: npm run lint
 
-      - name: Executar testes
-        run: npm test || echo "Testes não configurados ainda"
+      - name:  Executar testes
+        run: npm run test:coverage
 
-      - name: Build da aplicação
+      - name:  Build da aplicação
         run: npm run build
 
-      - name: Build imagem Docker
+      - name:  Build imagem Docker
         run: |
           docker build -t ${{ env.DOCKER_IMAGE }}:${{ github.sha }} .
           docker build -t ${{ env.DOCKER_IMAGE }}:latest .
 
-      - name: Teste da imagem Docker
+      - name:  Teste da imagem Docker
         run: |
           docker run -d --name test-container -p 3001:3000 ${{ env.DOCKER_IMAGE }}:latest
           sleep 10
-          curl -f http://localhost:3001/health || curl -f http://localhost:3001/ || echo "Health check failed"
+          
+          # Teste do endpoint principal
+          curl -f http://localhost:3001/ || exit 1
+          
+          # Teste do health check
+          curl -f http://localhost:3001/health || exit 1
+          
+          # Teste do status
+          curl -f http://localhost:3001/api/status || exit 1
+          
+          # Cleanup
           docker stop test-container
           docker rm test-container
 
-  # Job de CD - Deploy apenas na branch main
+      - name:  Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: success()
+
+  # Job de Continuous Deployment
   cd:
+    name:  Continuous Deployment  
     needs: ci
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
-      - name: Checkout código
+      - name:  Checkout código
         uses: actions/checkout@v4
 
-      - name: Build imagem para produção
+      - name:  Build imagem para produção
         run: |
           docker build -t ${{ env.DOCKER_IMAGE }}:${{ github.sha }} .
           docker build -t ${{ env.DOCKER_IMAGE }}:latest .
 
-      - name: Deploy via SSH
+      - name:  Deploy via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SERVER_HOST }}
@@ -71,27 +89,89 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
+            echo " Iniciando deploy..."
+            
+            # Verificar se Docker está funcionando
             if ! docker info > /dev/null 2>&1; then
-              echo "Docker não está rodando"
+              echo " Docker não está rodando"
               exit 1
             fi
             
-            # Navegar para o diretório do projeto
-            cd /home/ubuntu/devops-projeto || exit 1
+            # Navegar para diretório do projeto
+            cd /home/ubuntu/devops-demo || {
+              echo "Diretório do projeto não encontrado"
+              exit 1
+            }
             
-            # Fazer backup da versão atual
-            docker-compose down --remove-orphans
+            # Backup da versão atual
+            if docker-compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+              echo " Fazendo backup da versão atual..."
+              docker-compose -f docker-compose.prod.yml down
+            fi
             
             # Atualizar código
+            echo " Atualizando código..."
             git pull origin main
             
-            docker-compose build --no-cache
-            docker-compose up -d
+            # Build e deploy
+            echo " Construindo nova versão..."
+            docker-compose -f docker-compose.prod.yml build --no-cache
             
-            sleep 15
-            if ! docker-compose ps | grep -q "Up"; then
-              echo "Deploy falhou"
+            echo " Iniciando nova versão..."
+            docker-compose -f docker-compose.prod.yml up -d
+            
+            # Aguardar inicialização
+            echo " Aguardando inicialização..."
+            sleep 20
+            
+            # Verificar se deploy funcionou
+            if ! docker-compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+              echo " Deploy falhou - containers não estão rodando"
               exit 1
             fi
             
+            # Health check
+            echo " Verificando saúde da aplicação..."
+            max_attempts=5
+            attempt=1
+            
+            while [ $attempt -le $max_attempts ]; do
+              if curl -f http://localhost:3000/health > /dev/null 2>&1; then
+                echo " Health check passou na tentativa $attempt"
+                break
+              fi
+              
+              if [ $attempt -eq $max_attempts ]; then
+                echo " Health check falhou após $max_attempts tentativas"
+                exit 1
+              fi
+              
+              echo " Health check falhou, tentativa $attempt/$max_attempts"
+              sleep 10
+              attempt=$((attempt + 1))
+            done
+            
+            # Limpeza de imagens antigas
+            echo " Limpando imagens antigas..."
             docker image prune -f
+            
+            echo " Deploy concluído com sucesso!"
+            echo " Status dos containers:"
+            docker-compose -f docker-compose.prod.yml ps
+
+  # Job de notificação
+  notify:
+    name:  Notificação
+    needs: [ci, cd]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: 📧 Notificar resultado
+        run: |
+          if [ "${{ needs.ci.result }}" = "success" ] && [ "${{ needs.cd.result }}" = "success" ]; then
+            echo " Pipeline executado com sucesso!"
+          else
+            echo " Pipeline falhou"
+            exit 1
+          fi
