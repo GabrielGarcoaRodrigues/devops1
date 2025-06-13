@@ -36,7 +36,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /home/ubuntu/devops-projeto  # ajuste para o diretório real no servidor
+            cd /home/ubuntu/devops-projeto  
             git pull
             docker-compose down
             docker-compose up -d --build
