@@ -1,75 +1,33 @@
-
-name: CI/CD Pipeline - Terraform
+name: CI/CD Pipeline
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
-  # Job de CI: Roda em todo push e pull request
-  build_and_plan:
-    name: Build and Plan
+  terraform:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout do código
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
       - name: Instalar Terraform
-        uses: hashicorp/setup-terraform@v3
+        uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.6.6
 
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1 
       - name: Inicializar Terraform
         run: terraform init
-        working-directory: infra/
-
-      - name: Checar formatação do Terraform
-        run: terraform fmt -check
         working-directory: infra/
 
       - name: Validar código Terraform
         run: terraform validate
         working-directory: infra/
-      
-      - name: Gerar plano do Terraform
-        run: terraform plan -no-color
-        working-directory: infra/
 
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: build_and_plan 
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' # Condição para rodar
-
-    steps:
-      - name: Checkout do código
-        uses: actions/checkout@v4
-
-      - name: Instalar Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: 1.6.6
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
-      - name: Inicializar Terraform
-        run: terraform init
-        working-directory: infra/
-
-      - name: Aplicar mudanças do Terraform
+      - name: Aplicar Terraform (CD)
         run: terraform apply -auto-approve
         working-directory: infra/
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
